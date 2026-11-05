@@ -174,8 +174,9 @@ MOCK_ATS_CONTENT = json.dumps(
 )
 
 
-@patch("resume_scanner.app.routers.ats.client.chat.completions.create")
-def test_ats_openai_error_in_function(mock_create):
+@patch("resume_scanner.app.routers.ats.get_openai_client")
+def test_ats_openai_error_in_function(mock_get_client):
+    mock_create = mock_get_client.return_value.chat.completions.create
     mock_create.side_effect = OpenAIError("test error")
 
     job_desc = "We need a Python developer with FastAPI experience."
@@ -186,8 +187,9 @@ def test_ats_openai_error_in_function(mock_create):
     assert "OpenAI API error" in exc_info.value.detail
 
 
-@patch("resume_scanner.app.routers.ats.client.chat.completions.create")
-def test_ats_json_parse_error_in_function(mock_create):
+@patch("resume_scanner.app.routers.ats.get_openai_client")
+def test_ats_json_parse_error_in_function(mock_get_client):
+    mock_create = mock_get_client.return_value.chat.completions.create
     mock_message = Mock()
     mock_message.content = "invalid json {{{{"
     mock_choice = Mock()
@@ -213,8 +215,9 @@ def test_ats_empty_file_bytes():
     assert response.json()["detail"] == "Uploaded file is empty."
 
 
-@patch("resume_scanner.app.routers.ats.client.chat.completions.create")
-def test_ats_analysis_function(mock_create):
+@patch("resume_scanner.app.routers.ats.get_openai_client")
+def test_ats_analysis_function(mock_get_client):
+    mock_create = mock_get_client.return_value.chat.completions.create
     mock_message = Mock()
     mock_message.content = MOCK_ATS_CONTENT
     mock_choice = Mock()

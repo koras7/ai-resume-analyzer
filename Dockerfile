@@ -28,5 +28,9 @@ RUN uv pip install /tmp/*.whl --no-deps && rm /tmp/*.whl
 
 EXPOSE 8000
 
+# Liveness check. Uses Python because the slim image has no curl.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ.get(\"PORT\", \"8000\")}/health', timeout=3)" || exit 1
+
 # OPENAI_API_KEY is provided at runtime (docker run --env-file / -e).
 CMD ["resume-scanner"]

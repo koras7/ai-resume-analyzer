@@ -1,16 +1,13 @@
 import io
 import json
-import os
 
 import pdfplumber
-from dotenv import load_dotenv
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from openai import OpenAI, OpenAIError
+from openai import OpenAIError
 
 from resume_scanner.app.models.schemas import AnalysisResponse, AnalysisResult, ResumeTextRequest
+from resume_scanner.app.openai_client import get_openai_client
 
-load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 router = APIRouter()
 
 ANALYZE_PROMPT = """\
@@ -31,6 +28,7 @@ Resume:
 
 
 def _analyze_with_openai(resume_text: str) -> AnalysisResult:
+    client = get_openai_client()
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",

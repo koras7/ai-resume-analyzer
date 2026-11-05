@@ -1,27 +1,13 @@
 import json
-import os
-from typing import Optional
 
 import fitz
-from dotenv import load_dotenv
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from openai import OpenAI, OpenAIError
+from openai import OpenAIError
 
 from resume_scanner.app.models.schemas import ResumeTextRequest, RoleMatch, RolesResponse
-
-load_dotenv()
+from resume_scanner.app.openai_client import get_openai_client
 
 router = APIRouter()
-
-_client: Optional[OpenAI] = None
-
-
-def get_openai_client() -> OpenAI:
-    global _client
-    if _client is None:
-        _client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    return _client
-
 
 ROLES_PROMPT = """\
 You are a career advisor. Given the resume text below, identify the 3 job roles \

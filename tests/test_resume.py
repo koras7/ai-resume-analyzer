@@ -115,8 +115,9 @@ MOCK_ANALYZE_CONTENT = json.dumps(
 )
 
 
-@patch("resume_scanner.app.routers.resume.client.chat.completions.create")
-def test_resume_analyze_function(mock_create):
+@patch("resume_scanner.app.routers.resume.get_openai_client")
+def test_resume_analyze_function(mock_get_client):
+    mock_create = mock_get_client.return_value.chat.completions.create
     mock_message = Mock()
     mock_message.content = MOCK_ANALYZE_CONTENT
     mock_choice = Mock()
@@ -136,8 +137,9 @@ def test_resume_analyze_function(mock_create):
     assert result.matched_roles[0].match_score == 90
 
 
-@patch("resume_scanner.app.routers.resume.client.chat.completions.create")
-def test_resume_openai_error(mock_create):
+@patch("resume_scanner.app.routers.resume.get_openai_client")
+def test_resume_openai_error(mock_get_client):
+    mock_create = mock_get_client.return_value.chat.completions.create
     mock_create.side_effect = OpenAIError("test error")
 
     with pytest.raises(HTTPException) as exc_info:
@@ -146,8 +148,9 @@ def test_resume_openai_error(mock_create):
     assert exc_info.value.status_code == 500
 
 
-@patch("resume_scanner.app.routers.resume.client.chat.completions.create")
-def test_resume_json_parse_error(mock_create):
+@patch("resume_scanner.app.routers.resume.get_openai_client")
+def test_resume_json_parse_error(mock_get_client):
+    mock_create = mock_get_client.return_value.chat.completions.create
     mock_message = Mock()
     mock_message.content = "invalid json {{{{"
     mock_choice = Mock()
