@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+# Cancel an older run on the same branch when a new commit arrives.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv sync --all-groups
+      # Check only: fail the build instead of silently rewriting files.
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+
+  test:
+    name: Test & Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv sync --all-groups
+      - name: Run tests with coverage
+        env:
+          OPENAI_API_KEY: "dummy-key-for-testing"
+        run: |
+          mkdir -p coverage
+          uv run coverage run --source=src/resume_scanner/app -m pytest
+          uv run coverage lcov -o coverage/lcov.info
+          uv run coverage report
+      - name: Check coverage threshold
+        uses: VeryGoodOpenSource/very_good_coverage@v3
+        with:
+          path: coverage/lcov.info
+          min_coverage: 80
+          exclude: "**/**/__init__.py tests/**"
+
+  # GitHub doesn't allow `secrets` in a job-level `if:`, so this job
+  # turns "is the secret set?" into outputs the later jobs can check.
+  check-secrets:
+    name: Check deploy secrets
+    runs-on: ubuntu-latest
+    outputs:
+      has_docker: ${{ steps.check.outputs.has_docker }}
+      has_aws: ${{ steps.check.outputs.has_aws }}
+    steps:
+      - id: check
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          AWS_HOST: ${{ secrets.AWS_HOST }}
+          AWS_USER: ${{ secrets.AWS_USER }}
+          AWS_SSH_KEY: ${{ secrets.AWS_SSH_KEY }}
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            echo "has_docker=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_docker=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Docker Hub secrets not set; Build & Push will be skipped."
+          fi
+          if [ -n "$AWS_HOST" ] && [ -n "$AWS_USER" ] && [ -n "$AWS_SSH_KEY" ]; then
+            echo "has_aws=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_aws=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::AWS secrets not set; Deploy will be skipped."
+          fi
+
+  build:
+    name: Build & Push
+    needs: [lint, test, check-secrets]
+    if: >-
+      needs.check-secrets.outputs.has_docker == 'true' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/resume-analyzer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      # Tag with the commit SHA so every deploy is traceable and can be rolled back.
+      - name: Build image
+        run: docker build -t "$IMAGE:${{ github.sha }}" -t "$IMAGE:latest" .
+      - name: Push image
+        run: |
+          docker push "$IMAGE:${{ github.sha }}"
+          docker push "$IMAGE:latest"
+
+  deploy:
+    name: Deploy
+    needs: [build, check-secrets]
+    if: needs.check-secrets.outputs.has_aws == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/resume-analyzer:${{ github.sha }}
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          envs: IMAGE
+          # App secrets (OPENAI_API_KEY) live in an env file on the server, not in CI.
+          script: |
+            set -e
+            sudo docker pull "$IMAGE"
+            sudo docker rm -f resume-analyzer || true
+            sudo docker run -d --name resume-analyzer --restart unless-stopped \
+              -p 80:8000 \
+              --env-file /opt/resume-analyzer/.env \
+              "$IMAGE"

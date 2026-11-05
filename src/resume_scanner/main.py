@@ -32,5 +32,6 @@ def run() -> None:
         "resume_scanner.main:app",
         host=os.getenv("HOST", "127.0.0.1"),
         port=int(os.getenv("PORT", "8000")),
-        reload=True,
+        # Auto-reload is for local development only; opt in with RELOAD=true.
+        reload=os.getenv("RELOAD", "false").lower() in ("1", "true", "yes"),
     )
