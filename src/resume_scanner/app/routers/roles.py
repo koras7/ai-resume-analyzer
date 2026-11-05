@@ -1,11 +1,12 @@
 import json
+import time
 
 import fitz
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from openai import OpenAIError
 
 from resume_scanner.app.models.schemas import ResumeTextRequest, RoleMatch, RolesResponse
-from resume_scanner.app.openai_client import get_openai_client
+from resume_scanner.app.openai_client import get_openai_client, record_openai_call
 
 router = APIRouter()
 
@@ -37,6 +38,7 @@ def _extract_text_from_pdf(pdf_bytes: bytes) -> str:
 
 def _get_roles_from_openai(resume_text: str) -> RolesResponse:
     client = get_openai_client()
+    started = time.perf_counter()
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -44,7 +46,9 @@ def _get_roles_from_openai(resume_text: str) -> RolesResponse:
             response_format={"type": "json_object"},
         )
     except OpenAIError as e:
+        record_openai_call("roles", started, error=e)
         raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
+    record_openai_call("roles", started, response=response)
 
     raw = response.choices[0].message.content
     try:

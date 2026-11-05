@@ -257,6 +257,26 @@ Visit `http://localhost:8000/docs` to access the Swagger UI.
 | `HOST` | `127.0.0.1` (`0.0.0.0` in Docker) | Bind address |
 | `PORT` | `8000` | Port |
 | `RELOAD` | `false` | Auto-reload on code changes (dev only) |
+| `LOG_LEVEL` | `INFO` | Log level (`DEBUG` also shows probe requests) |
+
+---
+
+## 📜 Logging
+
+Logs go to stdout as one JSON object per line, so log tools can filter on fields:
+
+```json
+{"ts": "2026-11-05T18:14:10.491+00:00", "level": "INFO", "logger": "resume_scanner.access", "msg": "request completed", "request_id": "demo-43", "method": "POST", "path": "/roles/text", "status": 200, "duration_ms": 1613.97}
+```
+
+- **Request IDs:** send an `X-Request-ID` header (letters, digits, `.`, `_`, `-`, up to 128 chars) or one is generated. It's returned in the response header and attached to every log line for that request, including the OpenAI call log.
+- **Access log:** one line per request with method, path, status and duration. `/health` and `/ready` are logged at DEBUG so probes don't flood the logs.
+- **OpenAI calls:** one line per call with operation, model, latency and token counts. Resume text and model output are never logged.
+- **Level:** set `LOG_LEVEL` (default `INFO`).
+
+```bash
+curl -i -H 'X-Request-ID: my-test-1' http://localhost:8000/
+```
 
 ---
 
@@ -264,7 +284,7 @@ Visit `http://localhost:8000/docs` to access the Swagger UI.
 
 ```bash
 uv run pytest tests/ -v
-uv run pytest tests/ --cov=src/resume_scanner/app --cov-report=term-missing
+uv run pytest tests/ --cov=src/resume_scanner --cov-report=term-missing
 uv run ruff check .
 uv run ruff format --check .
 ```

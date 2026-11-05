@@ -1,11 +1,12 @@
 import json
+import time
 
 import fitz
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from openai import OpenAIError
 
 from resume_scanner.app.models.schemas import ATSResponse, ATSResult
-from resume_scanner.app.openai_client import get_openai_client
+from resume_scanner.app.openai_client import get_openai_client, record_openai_call
 
 router = APIRouter()
 
@@ -31,6 +32,7 @@ Resume:
 
 def _run_ats_analysis(resume_text: str, job_description: str) -> ATSResult:
     client = get_openai_client()
+    started = time.perf_counter()
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -46,7 +48,9 @@ def _run_ats_analysis(resume_text: str, job_description: str) -> ATSResult:
             response_format={"type": "json_object"},
         )
     except OpenAIError as e:
+        record_openai_call("ats", started, error=e)
         raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
+    record_openai_call("ats", started, response=response)
 
     raw = response.choices[0].message.content
     try:
