@@ -54,7 +54,7 @@ Test the endpoints interactively using the Swagger UI at the link above.
 ```mermaid
 flowchart TD
     Client["Client\nPostman / curl / test script"]
-    Doppler["Doppler\nSecrets Management"]
+    Secrets["GitHub Secrets + env file\nSecrets Management"]
     Docker["Docker\nContainerization"]
     AWS["AWS\nCloud Deployment"]
     GH["GitHub Actions\nCI/CD Pipeline"]
@@ -62,7 +62,7 @@ flowchart TD
     FastAPI["FastAPI Application\nPython + uv"]
 
     Client --> FastAPI
-    Doppler --> FastAPI
+    Secrets --> FastAPI
     Docker --> FastAPI
     AWS --> FastAPI
     GH --> FastAPI
@@ -158,53 +158,62 @@ Returns API health status.
 | Validation | Pydantic |
 | Testing | pytest + pytest-cov |
 | Linting | Ruff |
-| Secrets | Doppler |
+| Secrets | GitHub Actions secrets + server env file |
 | Container | Docker |
-| Registry | Docker Hub (koras7/resume-analyzer) |
+| Registry | Docker Hub |
 | Cloud | AWS EC2 |
-| CI/CD | GitHub Actions (4 jobs) |
+| CI/CD | GitHub Actions |
 
 ---
 
 ## 🔄 CI/CD Pipeline
 
-Every push to `master` triggers a 4-job GitHub Actions pipeline:
+Every push to any branch, and every PR to `master`, runs GitHub Actions:
 
 ```mermaid
 flowchart LR
     lint["🔍 Lint\nRuff check + format"]
-    coverage["🧪 Coverage\n32 tests · 100%"]
-    build["🏗️ Build & Push\nWheel → Docker → Hub"]
+    test["🧪 Test\npytest + 80% coverage gate"]
+    secrets["🔑 Check secrets"]
+    build["🏗️ Build & Push\nDocker → Hub (SHA tag)"]
     deploy["🚀 Deploy\nSSH → AWS → Run"]
 
-    lint --> coverage --> build --> deploy
+    lint --> build
+    test --> build
+    secrets --> build --> deploy
 ```
 
-| Job | Description |
-|---|---|
-| **Lint** | Runs Ruff linting and formatting checks across all source files |
-| **Coverage** | Runs 32 unit tests, enforces 80% minimum coverage using VeryGoodCoverage |
-| **Build & Push** | Builds Python wheel, Docker image, pushes to Docker Hub |
-| **Deploy** | SSHes into AWS EC2, pulls latest image, runs container with Doppler |
+| Job | Runs when | Description |
+|---|---|---|
+| **Lint** | always | `ruff check` + `ruff format --check` (fails on problems, never rewrites files) |
+| **Test & Coverage** | always | Runs the test suite, enforces 80% minimum coverage |
+| **Check secrets** | always | Detects whether deploy secrets are configured |
+| **Build & Push** | push to `master` + Docker Hub secrets set | Builds the image and pushes `:<commit-sha>` and `:latest` |
+| **Deploy** | Build ran + AWS secrets set | SSHes into EC2 and runs the exact SHA-tagged image |
+
+Without the secrets (forks, PRs, feature branches), Build and Deploy show as **skipped**, not failed.
 
 ---
 
-## 🔐 Secrets Management
+## 🔐 Secrets
 
-All secrets are managed through **Doppler** with separate `dev` and `prd` configs:
+**GitHub Actions secrets** (repo → Settings → Secrets and variables → Actions):
 
 | Secret | Description |
 |---|---|
-| `OPENAI_API_KEY` | OpenAI API key |
-| `HOST` | Server host (`0.0.0.0` in production) |
-| `PORT` | Server port (`80` in production) |
-| `DOCKER_USERNAME` | Docker Hub username |
-| `DOCKER_PASSWORD` | Docker Hub access token |
-| `AWS_IP` | EC2 instance IP address |
-| `AWS_EC2_USERNAME` | EC2 SSH username |
-| `SSH_AWS_PEM` | EC2 SSH private key |
+| `DOCKERHUB_USERNAME` | Docker Hub username (image is pushed to `<username>/resume-analyzer`) |
+| `DOCKERHUB_TOKEN` | Docker Hub access token |
+| `AWS_HOST` | EC2 instance IP or hostname |
+| `AWS_USER` | EC2 SSH username |
+| `AWS_SSH_KEY` | EC2 SSH private key |
 
-GitHub Actions uses a single `DOPPLER_SERVICE_TOKEN` secret to fetch all production secrets from Doppler at runtime. No secrets are ever hardcoded or stored in the repository.
+**App secrets** live on the server in `/opt/resume-analyzer/.env`, never in CI:
+
+```bash
+OPENAI_API_KEY=sk-...
+```
+
+Locally, put the same line in a `.env` file in the project root (it's git-ignored).
 
 ---
 
@@ -213,89 +222,55 @@ GitHub Actions uses a single `DOPPLER_SERVICE_TOKEN` secret to fetch all product
 ### Prerequisites
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/)
-- [Doppler CLI](https://docs.doppler.com/docs/install-cli)
 
 ### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/akkabakovb/Resume_Scanner_SoftwareEngineering.git
-cd Resume_Scanner_SoftwareEngineering
-
-# Install dependencies
+git clone https://github.com/koras7/ai-resume-analyzer.git
+cd ai-resume-analyzer
 uv sync --all-groups
-
-# Set up Doppler
-doppler setup
+echo "OPENAI_API_KEY=sk-..." > .env
 ```
 
 ### Running Locally
 
 ```bash
-# With Doppler (recommended)
-doppler run -- uv run uvicorn src.resume_scanner.main:app --reload
-
-# With .env file
-uv run uvicorn src.resume_scanner.main:app --reload
+RELOAD=true uv run resume-scanner
 ```
 
 Visit `http://localhost:8000/docs` to access the Swagger UI.
+
+| Env var | Default | Description |
+|---|---|---|
+| `HOST` | `127.0.0.1` (`0.0.0.0` in Docker) | Bind address |
+| `PORT` | `8000` | Port |
+| `RELOAD` | `false` | Auto-reload on code changes (dev only) |
 
 ---
 
 ## 🧪 Running Tests
 
 ```bash
-# Run all tests
 uv run pytest tests/ -v
-
-# Run with coverage report
 uv run pytest tests/ --cov=src/resume_scanner/app --cov-report=term-missing
-
-# Run linting
-uv run ruff check src/ tests/
-uv run ruff format --check src/ tests/
+uv run ruff check .
+uv run ruff format --check .
 ```
 
-**Current test results:**
-- ✅ 32 tests passing
-- ✅ 100% code coverage
-- ✅ All OpenAI calls mocked — no API credits used during testing
+All OpenAI calls are mocked, so tests use no API credits.
 
 ---
 
 ## 🐳 Docker
 
-### Pull from Docker Hub
+The image builds the wheel itself (multi-stage build), so no `uv build` step is needed first.
 
 ```bash
-docker pull koras7/resume-analyzer:latest
-```
-
-### Run with Doppler
-
-```bash
-docker run -p 80:80 \
-  -e DOPPLER_TOKEN=your-doppler-service-token \
-  koras7/resume-analyzer:latest
-```
-
-Visit `http://localhost/docs` to access the Swagger UI.
-
-### Build Locally
-
-```bash
-# Build wheel first
-uv build
-
-# Build Docker image
 docker build -t resume-analyzer .
-
-# Run locally
-docker run -p 80:80 \
-  -e DOPPLER_TOKEN=your-doppler-service-token \
-  resume-analyzer
+docker run -p 8000:8000 --env-file .env resume-analyzer
 ```
+
+Visit `http://localhost:8000/docs`.
 
 ---
 
