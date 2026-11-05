@@ -1,15 +1,12 @@
 import json
-import os
 
 import fitz
-from dotenv import load_dotenv
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from openai import OpenAI, OpenAIError
+from openai import OpenAIError
 
 from resume_scanner.app.models.schemas import ATSResponse, ATSResult
+from resume_scanner.app.openai_client import get_openai_client
 
-load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 router = APIRouter()
 
 ATS_PROMPT = """\
@@ -33,6 +30,7 @@ Resume:
 
 
 def _run_ats_analysis(resume_text: str, job_description: str) -> ATSResult:
+    client = get_openai_client()
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",

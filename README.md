@@ -69,7 +69,7 @@ flowchart TD
 
     FastAPI --> resume["POST /resume\nFull analysis + role matching"]
     FastAPI --> ats["POST /ats\nATS compatibility scoring"]
-    FastAPI --> health["GET /health\nAPI status check"]
+    FastAPI --> health["GET /health + /ready\nLiveness & readiness"]
 
     resume --> parser["Resume Parser Service\nPDF via PyMuPDF"]
     ats --> parser
@@ -134,8 +134,8 @@ Upload a PDF resume and job description to receive an ATS compatibility score.
 
 ---
 
-### `GET /health`
-Returns API health status.
+### `GET /health` (liveness)
+Returns 200 whenever the process is running. Checks no dependencies, so it's safe for restart decisions.
 
 ```json
 {
@@ -143,6 +143,18 @@ Returns API health status.
   "version": "1.0.0"
 }
 ```
+
+### `GET /ready` (readiness)
+Returns 200 when the instance can serve traffic, or 503 when required config is missing. Load balancers use it to decide where to send requests. It never calls OpenAI.
+
+```json
+{
+  "status": "ready",
+  "checks": { "openai_api_key": "ok" }
+}
+```
+
+Without `OPENAI_API_KEY`, the app still starts: `/ready` returns 503 `not_ready`, and the AI endpoints return 503 instead of crashing.
 
 ---
 
