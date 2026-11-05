@@ -42,7 +42,7 @@ jobs:
           OPENAI_API_KEY: "dummy-key-for-testing"
         run: |
           mkdir -p coverage
-          uv run coverage run --source=src/resume_scanner/app -m pytest
+          uv run coverage run --source=src/resume_scanner -m pytest
           uv run coverage lcov -o coverage/lcov.info
           uv run coverage report
       - name: Check coverage threshold
