@@ -1,8 +1,9 @@
 import os
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 
+from resume_scanner import metrics
 from resume_scanner.app.routers import analyze, ats, health, resume, roles
 from resume_scanner.app.routers.health import APP_VERSION
 from resume_scanner.logging_config import configure_logging
@@ -28,6 +29,13 @@ app.include_router(ats.router)
 @app.get("/")
 async def root():
     return {"message": "Resume Analyzer API is running!"}
+
+
+@app.get("/metrics", include_in_schema=False)
+async def prometheus_metrics():
+    """Prometheus scrape endpoint (text exposition format)."""
+    body, content_type = metrics.render_latest()
+    return Response(content=body, media_type=content_type)
 
 
 def run() -> None:

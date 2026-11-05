@@ -1,4 +1,4 @@
-"""Request context middleware: request IDs and one access log line per request.
+"""Request context middleware: request IDs, one access log line and HTTP metrics per request.
 
 Written as plain ASGI middleware (not BaseHTTPMiddleware) so the ContextVar it
 sets is visible to the endpoint and everything it calls.
@@ -9,6 +9,7 @@ import re
 import time
 import uuid
 
+from resume_scanner import metrics
 from resume_scanner.logging_config import request_id_var
 
 logger = logging.getLogger("resume_scanner.access")
@@ -16,8 +17,10 @@ logger = logging.getLogger("resume_scanner.access")
 REQUEST_ID_HEADER = "x-request-id"
 # Only trust short, simple IDs from clients; anything else could inject junk into logs.
 _VALID_REQUEST_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
-# Probes hit these every few seconds; log them at DEBUG so they don't drown real traffic.
-_QUIET_PATHS = {"/health", "/ready"}
+# Probes and scrapers hit these every few seconds; log them at DEBUG to keep logs readable.
+_QUIET_PATHS = {"/health", "/ready", "/metrics"}
+# Scrapes of /metrics are left out of the HTTP metrics so they don't skew request rate.
+_UNMEASURED_PATHS = {"/metrics"}
 
 
 def _incoming_request_id(scope) -> str | None:
@@ -41,6 +44,9 @@ class RequestContextMiddleware:
         token = request_id_var.set(request_id)
         started = time.perf_counter()
         status_code = 500  # stays 500 if the app raises before sending a response
+        measured = scope["path"] not in _UNMEASURED_PATHS
+        if measured:
+            metrics.HTTP_REQUESTS_IN_PROGRESS.inc()
 
         async def send_with_request_id(message):
             nonlocal status_code
@@ -60,6 +66,13 @@ class RequestContextMiddleware:
             )
             raise
         finally:
+            duration_s = time.perf_counter() - started
+            if measured:
+                metrics.HTTP_REQUESTS_IN_PROGRESS.dec()
+                # The router has filled in scope["route"] by now, so we label by template.
+                metrics.observe_request(
+                    scope["method"], metrics.route_label(scope), status_code, duration_s
+                )
             path = scope["path"]
             level = logging.DEBUG if path in _QUIET_PATHS else logging.INFO
             logger.log(
@@ -69,7 +82,7 @@ class RequestContextMiddleware:
                     "method": scope["method"],
                     "path": path,
                     "status": status_code,
-                    "duration_ms": round((time.perf_counter() - started) * 1000, 2),
+                    "duration_ms": round(duration_s * 1000, 2),
                 },
             )
             request_id_var.reset(token)

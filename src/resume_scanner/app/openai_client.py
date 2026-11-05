@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 from fastapi import HTTPException
 from openai import OpenAI
 
+from resume_scanner import metrics
+
 load_dotenv()
 
 logger = logging.getLogger("resume_scanner.openai")
@@ -39,13 +41,15 @@ def record_openai_call(
     response: Any = None,
     error: Optional[Exception] = None,
 ) -> None:
-    """Log one line per OpenAI call: latency, model and token usage.
+    """Record one OpenAI call: a log line (latency, model, token usage) and metrics.
 
     Never logs the prompt or the completion: they contain resume text (PII).
     """
+    duration_s = time.perf_counter() - started
+    metrics.observe_openai_call(operation, duration_s, success=error is None)
     fields: dict[str, Any] = {
         "operation": operation,
-        "latency_ms": round((time.perf_counter() - started) * 1000, 2),
+        "latency_ms": round(duration_s * 1000, 2),
     }
     if error is not None:
         fields["error_type"] = type(error).__name__
