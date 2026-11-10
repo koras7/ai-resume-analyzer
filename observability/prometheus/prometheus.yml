@@ -1,0 +1,11 @@
+# Prometheus pulls ("scrapes") /metrics from the API every 15 seconds.
+# "api" is the service name on the Docker Compose network.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: resume-api
+    static_configs:
+      - targets: ["api:8000"]

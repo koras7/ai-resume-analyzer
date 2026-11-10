@@ -12,3 +12,5 @@ coverage
 .github
 .ruff_cache
 .pytest_cache
+observability
+docker-compose.yml
