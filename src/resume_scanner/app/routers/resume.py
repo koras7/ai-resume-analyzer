@@ -1,12 +1,8 @@
-import json
-import time
-
 import fitz
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from openai import OpenAIError
 
-from resume_scanner.app.models.schemas import ResumeAnalysisResponse, RoleMatch
-from resume_scanner.app.openai_client import get_openai_client, record_openai_call
+from resume_scanner.app.models.schemas import ResumeAnalysisResponse
+from resume_scanner.app.openai_client import chat_completion
 
 router = APIRouter()
 
@@ -36,26 +32,9 @@ Resume:
 
 
 def _analyze_resume(resume_text: str) -> ResumeAnalysisResponse:
-    client = get_openai_client()
-    started = time.perf_counter()
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": RESUME_PROMPT.format(resume_text=resume_text)}],
-            response_format={"type": "json_object"},
-        )
-    except OpenAIError as e:
-        record_openai_call("resume", started, error=e)
-        raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
-    record_openai_call("resume", started, response=response)
-
-    raw = response.choices[0].message.content
-    try:
-        data = json.loads(raw)
-        data["matched_roles"] = [RoleMatch(**r) for r in data.get("matched_roles", [])]
-        return ResumeAnalysisResponse(**data)
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
-        raise HTTPException(status_code=500, detail=f"Failed to parse OpenAI response: {str(e)}")
+    return chat_completion(
+        "resume", RESUME_PROMPT.format(resume_text=resume_text), ResumeAnalysisResponse
+    )
 
 
 @router.post("/resume", response_model=ResumeAnalysisResponse)

@@ -7,6 +7,10 @@ from fastapi.testclient import TestClient
 from openai import OpenAIError
 
 from resume_scanner.app.models.schemas import ResumeAnalysisResponse
+from resume_scanner.app.openai_client import (
+    UPSTREAM_ERROR_DETAIL,
+    UPSTREAM_INVALID_RESPONSE_DETAIL,
+)
 from resume_scanner.app.routers.resume import _analyze_resume
 from resume_scanner.main import app
 
@@ -115,7 +119,7 @@ MOCK_ANALYZE_CONTENT = json.dumps(
 )
 
 
-@patch("resume_scanner.app.routers.resume.get_openai_client")
+@patch("resume_scanner.app.openai_client.get_openai_client")
 def test_resume_analyze_function(mock_get_client):
     mock_create = mock_get_client.return_value.chat.completions.create
     mock_message = Mock()
@@ -137,7 +141,7 @@ def test_resume_analyze_function(mock_get_client):
     assert result.matched_roles[0].match_score == 90
 
 
-@patch("resume_scanner.app.routers.resume.get_openai_client")
+@patch("resume_scanner.app.openai_client.get_openai_client")
 def test_resume_openai_error(mock_get_client):
     mock_create = mock_get_client.return_value.chat.completions.create
     mock_create.side_effect = OpenAIError("test error")
@@ -145,10 +149,13 @@ def test_resume_openai_error(mock_get_client):
     with pytest.raises(HTTPException) as exc_info:
         _analyze_resume("Sample resume text")
 
-    assert exc_info.value.status_code == 500
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.detail == UPSTREAM_ERROR_DETAIL
+    # The raw SDK error must never reach the client.
+    assert "test error" not in exc_info.value.detail
 
 
-@patch("resume_scanner.app.routers.resume.get_openai_client")
+@patch("resume_scanner.app.openai_client.get_openai_client")
 def test_resume_json_parse_error(mock_get_client):
     mock_create = mock_get_client.return_value.chat.completions.create
     mock_message = Mock()
@@ -160,8 +167,8 @@ def test_resume_json_parse_error(mock_get_client):
     with pytest.raises(HTTPException) as exc_info:
         _analyze_resume("Sample resume text")
 
-    assert exc_info.value.status_code == 500
-    assert "Failed to parse OpenAI response" in exc_info.value.detail
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.detail == UPSTREAM_INVALID_RESPONSE_DETAIL
 
 
 def test_resume_empty_file_bytes():
