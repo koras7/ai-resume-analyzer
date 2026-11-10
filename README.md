@@ -301,6 +301,37 @@ curl -i -H 'X-Request-ID: my-test-1' http://localhost:8000/
 
 ---
 
+## 📊 Local Monitoring (Prometheus + Grafana)
+
+One command starts the API, a Prometheus that scrapes it every 15s, and a Grafana with a provisioned dashboard — "dashboards as code", so everyone gets the same view:
+
+```bash
+docker compose up --build
+```
+
+| Service | URL | Notes |
+|---|---|---|
+| API | http://localhost:8000/docs | Reads `OPENAI_API_KEY` from `.env` |
+| Prometheus | http://localhost:9090/targets | The `resume-api` target should be UP |
+| Grafana | http://localhost:3000 | Anonymous read-only; dashboard "Resume Analyzer API" |
+
+The dashboard shows request rate by route, 5xx error rate, p50/p95/p99 latency, requests in progress, and OpenAI latency and errors. Its JSON lives in `observability/grafana/dashboards/`, and the datasource and dashboard provisioning in `observability/grafana/provisioning/`.
+
+Generate some traffic to fill the panels:
+
+```bash
+while true; do
+  curl -s localhost:8000/ > /dev/null          # 200s
+  curl -s localhost:8000/nope > /dev/null      # 404s, labeled "unmatched"
+  curl -s localhost:8000/health > /dev/null
+  sleep 1
+done
+```
+
+Stop everything with `docker compose down`.
+
+---
+
 ## 🧪 Running Tests
 
 ```bash

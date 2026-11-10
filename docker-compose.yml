@@ -1,0 +1,37 @@
+# Local observability stack: the API, Prometheus scraping it, and Grafana
+# showing a provisioned dashboard. Run `docker compose up --build`, then open
+# http://localhost:3000. This is for local use; it is not the production deploy.
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env # provides OPENAI_API_KEY; never committed
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.16.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.3.1
+    ports:
+      - "3000:3000"
+    environment:
+      # Open as read-only without a login; admin is still admin/admin if needed.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
