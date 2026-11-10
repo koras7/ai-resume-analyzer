@@ -280,6 +280,27 @@ curl -i -H 'X-Request-ID: my-test-1' http://localhost:8000/
 
 ---
 
+## 📈 Metrics
+
+`GET /metrics` serves Prometheus metrics (hidden from the Swagger docs):
+
+| Metric | Type | Labels | What it answers |
+|---|---|---|---|
+| `http_requests_total` | Counter | `method`, `route`, `status` | Request rate and error rate |
+| `http_request_duration_seconds` | Histogram | `method`, `route` | p50 / p95 / p99 latency |
+| `http_requests_in_progress` | Gauge | none | Current load |
+| `openai_requests_total` | Counter | `operation`, `outcome` | OpenAI call rate and failures |
+| `openai_request_duration_seconds` | Histogram | `operation` | How much latency comes from OpenAI |
+
+- `route` is the route template (for example `/items/{id}`), not the raw URL, so the number of time series stays bounded. Paths that match no route are labeled `unmatched`.
+- Scrapes of `/metrics` itself are not counted.
+- Example queries:
+  - Error rate: `sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))`
+  - p95 latency: `histogram_quantile(0.95, sum by (le, route) (rate(http_request_duration_seconds_bucket[5m])))`
+- In production, keep `/metrics` reachable only from your Prometheus server (security group or reverse proxy), not the public internet.
+
+---
+
 ## 🧪 Running Tests
 
 ```bash
