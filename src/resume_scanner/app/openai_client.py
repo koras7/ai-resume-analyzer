@@ -8,6 +8,14 @@ and the mapping of upstream failures to HTTP status codes — 503 when no key
 is configured, 502 when OpenAI fails or returns a response that doesn't fit
 the expected schema. Clients never see the raw upstream error string; it goes
 to the log instead.
+
+This module is synchronous on purpose, so the RQ worker (a plain sync
+process) can call it directly. Async HTTP handlers must therefore never call
+it inline — a sync call inside `async def` blocks the event loop and
+serializes every in-flight request behind one upstream round trip. The
+routers call their helpers via `run_in_threadpool(...)`, which keeps the
+loop free; concurrency is then bounded by anyio's thread limiter (40 by
+default), not by 1.
 """
 
 import logging
@@ -48,8 +56,8 @@ def get_openai_client() -> OpenAI:
             raise HTTPException(status_code=503, detail="OpenAI API key is not configured.")
         _client = OpenAI(
             api_key=os.environ["OPENAI_API_KEY"],
-            # Without a timeout, one hung upstream call holds the connection
-            # (and this app's event loop) forever.
+            # Without a timeout, one hung upstream call holds its connection
+            # and threadpool thread forever.
             timeout=httpx.Timeout(
                 float(os.getenv("OPENAI_TIMEOUT_S", "30")),
                 connect=float(os.getenv("OPENAI_CONNECT_TIMEOUT_S", "5")),

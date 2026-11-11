@@ -1,5 +1,6 @@
 import fitz
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 
 from resume_scanner.app.models.schemas import ResumeTextRequest, RolesResponse
 from resume_scanner.app.openai_client import chat_completion
@@ -51,7 +52,7 @@ async def analyze_roles_text(body: ResumeTextRequest):
     """
     if not body.resume_text.strip():
         raise HTTPException(status_code=400, detail="Resume text is empty or missing.")
-    return _get_roles_from_openai(body.resume_text.strip())
+    return await run_in_threadpool(_get_roles_from_openai, body.resume_text.strip())
 
 
 @router.post("/roles", response_model=RolesResponse, include_in_schema=False)
@@ -73,4 +74,4 @@ async def analyze_roles_upload(file: UploadFile = File(...)):
     if not text.strip():
         raise HTTPException(status_code=400, detail="Resume text is empty or missing.")
 
-    return _get_roles_from_openai(text.strip())
+    return await run_in_threadpool(_get_roles_from_openai, text.strip())

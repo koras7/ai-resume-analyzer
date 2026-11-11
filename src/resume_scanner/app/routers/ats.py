@@ -1,5 +1,6 @@
 import fitz
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 
 from resume_scanner.app.models.schemas import ATSResponse, ATSResult
 from resume_scanner.app.openai_client import chat_completion
@@ -62,5 +63,7 @@ async def ats_check(
     if not job_description.strip():
         raise HTTPException(status_code=400, detail="Job description is empty or missing.")
 
-    result = _run_ats_analysis(resume_text.strip(), job_description.strip())
+    result = await run_in_threadpool(
+        _run_ats_analysis, resume_text.strip(), job_description.strip()
+    )
     return ATSResponse(filename=file.filename, result=result)
