@@ -33,7 +33,10 @@ Resume:
 
 def _analyze_resume(resume_text: str) -> ResumeAnalysisResponse:
     return chat_completion(
-        "resume", RESUME_PROMPT.format(resume_text=resume_text), ResumeAnalysisResponse
+        "resume",
+        RESUME_PROMPT.format(resume_text=resume_text),
+        ResumeAnalysisResponse,
+        cache_text=resume_text,
     )
 
 

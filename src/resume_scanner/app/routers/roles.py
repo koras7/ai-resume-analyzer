@@ -33,7 +33,12 @@ def _extract_text_from_pdf(pdf_bytes: bytes) -> str:
 
 
 def _get_roles_from_openai(resume_text: str) -> RolesResponse:
-    return chat_completion("roles", ROLES_PROMPT.format(resume_text=resume_text), RolesResponse)
+    return chat_completion(
+        "roles",
+        ROLES_PROMPT.format(resume_text=resume_text),
+        RolesResponse,
+        cache_text=resume_text,
+    )
 
 
 @router.post("/roles/text", response_model=RolesResponse, include_in_schema=False)

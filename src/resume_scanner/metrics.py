@@ -60,6 +60,11 @@ JOBS_ENQUEUED = Counter(
     "Background jobs submitted to the queue, by operation.",
     ["operation"],
 )
+CACHE_OPERATIONS = Counter(
+    "cache_operations_total",
+    "Result cache lookups, by operation and result (hit or miss).",
+    ["operation", "result"],
+)
 
 
 class JobQueueCollector:
@@ -115,6 +120,10 @@ def observe_openai_call(operation: str, duration_s: float, success: bool) -> Non
 
 def observe_job_enqueued(operation: str) -> None:
     JOBS_ENQUEUED.labels(operation=operation).inc()
+
+
+def observe_cache_lookup(operation: str, hit: bool) -> None:
+    CACHE_OPERATIONS.labels(operation=operation, result="hit" if hit else "miss").inc()
 
 
 def render_latest() -> tuple[bytes, str]:

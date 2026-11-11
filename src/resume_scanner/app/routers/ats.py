@@ -28,7 +28,11 @@ Resume:
 
 def _run_ats_analysis(resume_text: str, job_description: str) -> ATSResult:
     prompt = ATS_PROMPT.format(job_description=job_description, resume_text=resume_text)
-    return chat_completion("ats", prompt, ATSResult)
+    # Both inputs determine the output, so both go into the cache hash; the
+    # \x00 separator keeps ("ab", "c") and ("a", "bc") from colliding.
+    return chat_completion(
+        "ats", prompt, ATSResult, cache_text=f"{resume_text}\x00{job_description}"
+    )
 
 
 @router.post("/ats", response_model=ATSResponse)
