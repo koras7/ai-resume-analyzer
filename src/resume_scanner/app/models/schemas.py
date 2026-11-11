@@ -47,6 +47,18 @@ class ResumeAnalysisResponse(BaseModel):
     matched_roles: list[RoleMatch]
 
 
+class JobSubmitResponse(BaseModel):
+    job_id: str
+    status: str
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    status: str  # queued | started | finished | failed
+    result: Optional[ResumeAnalysisResponse] = None
+    detail: Optional[str] = None
+
+
 class ATSRequest(BaseModel):
     resume_text: str
     job_description: str

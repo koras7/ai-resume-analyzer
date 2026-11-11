@@ -11,7 +11,15 @@ Metrics live in this process's memory. With several uvicorn workers you'd need
 prometheus_client's multiprocess mode; this service runs a single worker.
 """
 
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    REGISTRY,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
+from prometheus_client.core import GaugeMetricFamily
 
 # Sized for this API: most requests are fast, but LLM-backed ones take seconds.
 LATENCY_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 20, 30, 60)
@@ -47,6 +55,49 @@ OPENAI_REQUEST_DURATION = Histogram(
 )
 
 
+JOBS_ENQUEUED = Counter(
+    "jobs_enqueued_total",
+    "Background jobs submitted to the queue, by operation.",
+    ["operation"],
+)
+
+
+class JobQueueCollector:
+    """Scrape-time view of the RQ queue, read from Redis.
+
+    The RQ worker is a separate process, so its Prometheus counters can't
+    live in this registry; queue state is read from Redis at scrape time
+    instead. When Redis is unreachable the collector yields nothing, so the
+    rest of /metrics still renders.
+    """
+
+    def collect(self):
+        from resume_scanner import jobs
+
+        try:
+            queue = jobs.get_queue()
+            depth = GaugeMetricFamily(
+                "job_queue_depth",
+                "Jobs waiting in the queue.",
+                labels=["queue"],
+            )
+            depth.add_metric([queue.name], queue.count)
+            states = GaugeMetricFamily(
+                "job_queue_registry_jobs",
+                "Jobs currently tracked per state; finished and failed expire after their TTL.",
+                labels=["queue", "state"],
+            )
+            states.add_metric([queue.name, "started"], queue.started_job_registry.count)
+            states.add_metric([queue.name, "finished"], queue.finished_job_registry.count)
+            states.add_metric([queue.name, "failed"], queue.failed_job_registry.count)
+            return [depth, states]
+        except Exception:
+            return []
+
+
+REGISTRY.register(JobQueueCollector())
+
+
 def route_label(scope) -> str:
     route = scope.get("route")
     return getattr(route, "path", None) or UNMATCHED_ROUTE
@@ -60,6 +111,10 @@ def observe_request(method: str, route: str, status: int, duration_s: float) -> 
 def observe_openai_call(operation: str, duration_s: float, success: bool) -> None:
     OPENAI_REQUESTS.labels(operation=operation, outcome="success" if success else "error").inc()
     OPENAI_REQUEST_DURATION.labels(operation=operation).observe(duration_s)
+
+
+def observe_job_enqueued(operation: str) -> None:
+    JOBS_ENQUEUED.labels(operation=operation).inc()
 
 
 def render_latest() -> tuple[bytes, str]:

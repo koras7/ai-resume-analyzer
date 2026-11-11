@@ -4,7 +4,7 @@ import uvicorn
 from fastapi import FastAPI, Response
 
 from resume_scanner import metrics
-from resume_scanner.app.routers import analyze, ats, health, resume, roles
+from resume_scanner.app.routers import analyze, ats, health, jobs, resume, roles
 from resume_scanner.app.routers.health import APP_VERSION
 from resume_scanner.logging_config import configure_logging
 from resume_scanner.middleware import RequestContextMiddleware
@@ -24,6 +24,7 @@ app.include_router(roles.router)
 app.include_router(analyze.router)
 app.include_router(resume.router)
 app.include_router(ats.router)
+app.include_router(jobs.router)
 
 
 @app.get("/")

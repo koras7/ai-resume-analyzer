@@ -6,15 +6,36 @@ services:
   api:
     build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env # provides OPENAI_API_KEY; never committed
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["rq", "worker", "resume", "--url", "redis://redis:6379/0"]
+    env_file:
+      - .env # the worker makes the OpenAI calls
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.2-alpine
+    ports:
+      # Bound to localhost so only this machine can reach it; lets an API or
+      # worker running directly on the host use it too.
+      - "127.0.0.1:6379:6379"
     restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:v3.16.0
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     depends_on:
@@ -24,7 +45,7 @@ services:
   grafana:
     image: grafana/grafana:13.3.1
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       # Open as read-only without a login; admin is still admin/admin if needed.
       GF_AUTH_ANONYMOUS_ENABLED: "true"

@@ -156,6 +156,9 @@ Returns 200 when the instance can serve traffic, or 503 when required config is 
 
 Without `OPENAI_API_KEY`, the app still starts: `/ready` returns 503 `not_ready`, and the AI endpoints return 503 instead of crashing.
 
+### `POST /resume/jobs` and `GET /resume/jobs/{job_id}`
+The same analysis as `POST /resume`, run as a background job: submitting returns `202` with a `job_id` immediately, and polling returns `queued`, `started`, `failed`, or `finished` with the same result shape as `POST /resume`. See [Background Jobs](#-background-jobs).
+
 ---
 
 ## 🛠 Tech Stack
@@ -280,6 +283,38 @@ curl -i -H 'X-Request-ID: my-test-1' http://localhost:8000/
 
 ---
 
+## 🧵 Background Jobs
+
+Analyzing a resume takes seconds because of the OpenAI call. Instead of holding the HTTP connection open for the whole analysis, the API can run it as a background job: it stores the work in Redis, an `rq worker` process picks it up, and the client polls for the result.
+
+```bash
+# Submit: returns 202 with a job ID right away
+curl -s -X POST localhost:8000/resume/jobs -F "file=@resume.pdf"
+# {"job_id":"8d3f...","status":"queued"}
+
+# Poll: queued -> started -> finished (with the result) or failed
+curl -s localhost:8000/resume/jobs/8d3f...
+# {"job_id":"8d3f...","status":"finished","result":{...}}
+```
+
+`docker compose up` starts Redis and a worker alongside the API. To run the pieces directly on your machine instead:
+
+```bash
+docker compose up redis          # or any Redis on localhost:6379
+uv run resume-scanner            # the API; set REDIS_URL to override the default
+uv run rq worker resume --worker-class rq.SimpleWorker
+```
+
+`--worker-class rq.SimpleWorker` matters on macOS: the default worker forks a child per job, which macOS's Objective-C runtime dislikes; SimpleWorker runs jobs in-process. In Docker (Linux) the default fork worker is used.
+
+Notes:
+- The API extracts the PDF text and enqueues only the text, so no binary blobs land in Redis.
+- Results are kept for 1 hour (`RESULT_TTL_S`), then expire.
+- A failed job returns a generic `detail`; the real exception stays in the worker's log.
+- If Redis is down, the job endpoints return 503; the synchronous endpoints keep working without it.
+
+---
+
 ## 📈 Metrics
 
 `GET /metrics` serves Prometheus metrics (hidden from the Swagger docs):
@@ -291,6 +326,9 @@ curl -i -H 'X-Request-ID: my-test-1' http://localhost:8000/
 | `http_requests_in_progress` | Gauge | none | Current load |
 | `openai_requests_total` | Counter | `operation`, `outcome` | OpenAI call rate and failures |
 | `openai_request_duration_seconds` | Histogram | `operation` | How much latency comes from OpenAI |
+| `jobs_enqueued_total` | Counter | `operation` | Background job submission rate |
+| `job_queue_depth` | Gauge | `queue` | Jobs waiting; rising depth means the workers can't keep up |
+| `job_queue_registry_jobs` | Gauge | `queue`, `state` | Jobs tracked as started / finished / failed (worker outcomes, read from Redis at scrape time) |
 
 - `route` is the route template (for example `/items/{id}`), not the raw URL, so the number of time series stays bounded. Paths that match no route are labeled `unmatched`.
 - Scrapes of `/metrics` itself are not counted.

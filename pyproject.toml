@@ -17,11 +17,14 @@ dependencies = [
     "pymupdf>=1.27.2",
     "python-dotenv>=1.2.2",
     "python-multipart>=0.0.22",
+    "redis>=8.1.0",
+    "rq>=3.0.0",
 ]
 
 [dependency-groups]
 dev = [
     "coverage>=7.13.5",
+    "fakeredis>=2.40.0",
     "httpx>=0.28.1",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
