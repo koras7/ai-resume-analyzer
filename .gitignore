@@ -14,3 +14,4 @@ wheels/
 PROJECT_CONTEXT.md
 .vs/
 .coverage
+loadtest/out/
