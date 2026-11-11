@@ -7,6 +7,10 @@ from fastapi.testclient import TestClient
 from openai import OpenAIError
 
 from resume_scanner.app.models.schemas import ATSResult
+from resume_scanner.app.openai_client import (
+    UPSTREAM_ERROR_DETAIL,
+    UPSTREAM_INVALID_RESPONSE_DETAIL,
+)
 from resume_scanner.app.routers.ats import _run_ats_analysis
 from resume_scanner.main import app
 
@@ -116,7 +120,7 @@ def test_ats_openai_error(mock_run_ats, mock_fitz_open):
     mock_page = Mock()
     mock_page.get_text.return_value = "Valid resume content"
     mock_fitz_open.return_value = [mock_page]
-    mock_run_ats.side_effect = HTTPException(status_code=500, detail="OpenAI API error: test error")
+    mock_run_ats.side_effect = HTTPException(status_code=502, detail=UPSTREAM_ERROR_DETAIL)
 
     response = client.post(
         "/ats",
@@ -124,7 +128,7 @@ def test_ats_openai_error(mock_run_ats, mock_fitz_open):
         data={"job_description": "We need a Python developer with FastAPI experience."},
     )
 
-    assert response.status_code == 500
+    assert response.status_code == 502
 
 
 @patch("resume_scanner.app.routers.ats.fitz.open")
@@ -150,8 +154,8 @@ def test_ats_parse_error(mock_run_ats, mock_fitz_open):
     mock_page.get_text.return_value = "Valid resume content"
     mock_fitz_open.return_value = [mock_page]
     mock_run_ats.side_effect = HTTPException(
-        status_code=500,
-        detail="Failed to parse OpenAI response: test",
+        status_code=502,
+        detail=UPSTREAM_INVALID_RESPONSE_DETAIL,
     )
 
     response = client.post(
@@ -160,7 +164,7 @@ def test_ats_parse_error(mock_run_ats, mock_fitz_open):
         data={"job_description": "We need a Python developer with FastAPI experience."},
     )
 
-    assert response.status_code == 500
+    assert response.status_code == 502
 
 
 MOCK_ATS_CONTENT = json.dumps(
@@ -174,7 +178,7 @@ MOCK_ATS_CONTENT = json.dumps(
 )
 
 
-@patch("resume_scanner.app.routers.ats.get_openai_client")
+@patch("resume_scanner.app.openai_client.get_openai_client")
 def test_ats_openai_error_in_function(mock_get_client):
     mock_create = mock_get_client.return_value.chat.completions.create
     mock_create.side_effect = OpenAIError("test error")
@@ -183,11 +187,13 @@ def test_ats_openai_error_in_function(mock_get_client):
     with pytest.raises(HTTPException) as exc_info:
         _run_ats_analysis("Sample resume text", job_desc)
 
-    assert exc_info.value.status_code == 500
-    assert "OpenAI API error" in exc_info.value.detail
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.detail == UPSTREAM_ERROR_DETAIL
+    # The raw SDK error must never reach the client.
+    assert "test error" not in exc_info.value.detail
 
 
-@patch("resume_scanner.app.routers.ats.get_openai_client")
+@patch("resume_scanner.app.openai_client.get_openai_client")
 def test_ats_json_parse_error_in_function(mock_get_client):
     mock_create = mock_get_client.return_value.chat.completions.create
     mock_message = Mock()
@@ -200,8 +206,8 @@ def test_ats_json_parse_error_in_function(mock_get_client):
     with pytest.raises(HTTPException) as exc_info:
         _run_ats_analysis("Sample resume text", job_desc)
 
-    assert exc_info.value.status_code == 500
-    assert "Failed to parse OpenAI response" in exc_info.value.detail
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.detail == UPSTREAM_INVALID_RESPONSE_DETAIL
 
 
 def test_ats_empty_file_bytes():
@@ -215,7 +221,7 @@ def test_ats_empty_file_bytes():
     assert response.json()["detail"] == "Uploaded file is empty."
 
 
-@patch("resume_scanner.app.routers.ats.get_openai_client")
+@patch("resume_scanner.app.openai_client.get_openai_client")
 def test_ats_analysis_function(mock_get_client):
     mock_create = mock_get_client.return_value.chat.completions.create
     mock_message = Mock()

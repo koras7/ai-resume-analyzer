@@ -1,13 +1,10 @@
 import io
-import json
-import time
 
 import pdfplumber
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from openai import OpenAIError
 
 from resume_scanner.app.models.schemas import AnalysisResponse, AnalysisResult, ResumeTextRequest
-from resume_scanner.app.openai_client import get_openai_client, record_openai_call
+from resume_scanner.app.openai_client import chat_completion
 
 router = APIRouter()
 
@@ -29,25 +26,9 @@ Resume:
 
 
 def _analyze_with_openai(resume_text: str) -> AnalysisResult:
-    client = get_openai_client()
-    started = time.perf_counter()
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": ANALYZE_PROMPT.format(resume_text=resume_text)}],
-            response_format={"type": "json_object"},
-        )
-    except OpenAIError as e:
-        record_openai_call("analyze", started, error=e)
-        raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
-    record_openai_call("analyze", started, response=response)
-
-    raw = response.choices[0].message.content
-    try:
-        data = json.loads(raw)
-        return AnalysisResult(**data)
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
-        raise HTTPException(status_code=500, detail=f"Failed to parse OpenAI response: {str(e)}")
+    return chat_completion(
+        "analyze", ANALYZE_PROMPT.format(resume_text=resume_text), AnalysisResult
+    )
 
 
 @router.post("/analyze", response_model=AnalysisResponse, include_in_schema=False)

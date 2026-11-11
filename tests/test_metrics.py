@@ -146,7 +146,7 @@ def _openai(operation, outcome):
     return _value("openai_requests_total", operation=operation, outcome=outcome)
 
 
-@patch("resume_scanner.app.routers.ats.get_openai_client")
+@patch("resume_scanner.app.openai_client.get_openai_client")
 def test_openai_success_counted(mock_get_client):
     message = Mock(
         content=json.dumps(
@@ -171,7 +171,7 @@ def test_openai_success_counted(mock_get_client):
     assert _value("openai_request_duration_seconds_count", operation="ats") == before_duration + 1
 
 
-@patch("resume_scanner.app.routers.ats.get_openai_client")
+@patch("resume_scanner.app.openai_client.get_openai_client")
 def test_openai_error_counted(mock_get_client):
     mock_get_client.return_value.chat.completions.create.side_effect = OpenAIError("down")
     before = _openai("ats", "error")

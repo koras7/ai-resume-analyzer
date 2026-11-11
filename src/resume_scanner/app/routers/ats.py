@@ -1,12 +1,8 @@
-import json
-import time
-
 import fitz
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from openai import OpenAIError
 
 from resume_scanner.app.models.schemas import ATSResponse, ATSResult
-from resume_scanner.app.openai_client import get_openai_client, record_openai_call
+from resume_scanner.app.openai_client import chat_completion
 
 router = APIRouter()
 
@@ -31,33 +27,8 @@ Resume:
 
 
 def _run_ats_analysis(resume_text: str, job_description: str) -> ATSResult:
-    client = get_openai_client()
-    started = time.perf_counter()
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": ATS_PROMPT.format(
-                        job_description=job_description,
-                        resume_text=resume_text,
-                    ),
-                }
-            ],
-            response_format={"type": "json_object"},
-        )
-    except OpenAIError as e:
-        record_openai_call("ats", started, error=e)
-        raise HTTPException(status_code=500, detail=f"OpenAI API error: {str(e)}")
-    record_openai_call("ats", started, response=response)
-
-    raw = response.choices[0].message.content
-    try:
-        data = json.loads(raw)
-        return ATSResult(**data)
-    except (json.JSONDecodeError, KeyError, TypeError) as e:
-        raise HTTPException(status_code=500, detail=f"Failed to parse OpenAI response: {str(e)}")
+    prompt = ATS_PROMPT.format(job_description=job_description, resume_text=resume_text)
+    return chat_completion("ats", prompt, ATSResult)
 
 
 @router.post("/ats", response_model=ATSResponse)

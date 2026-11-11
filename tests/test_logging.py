@@ -172,7 +172,7 @@ def _mock_completion(content):
     return Mock(choices=[Mock(message=message)], usage=usage, model="gpt-4o-mini-2024-07-18")
 
 
-@patch("resume_scanner.app.routers.ats.get_openai_client")
+@patch("resume_scanner.app.openai_client.get_openai_client")
 def test_openai_call_logged_without_resume_text(mock_get_client, caplog):
     caplog.set_level(logging.INFO)
     mock_get_client.return_value.chat.completions.create.return_value = _mock_completion(
@@ -199,7 +199,7 @@ def test_openai_call_logged_without_resume_text(mock_get_client, caplog):
     assert SECRET_RESUME not in caplog.text
 
 
-@patch("resume_scanner.app.routers.ats.get_openai_client")
+@patch("resume_scanner.app.openai_client.get_openai_client")
 def test_openai_failure_logged(mock_get_client, caplog):
     caplog.set_level(logging.INFO)
     mock_get_client.return_value.chat.completions.create.side_effect = OpenAIError("down")
