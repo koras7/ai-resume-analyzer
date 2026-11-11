@@ -312,6 +312,25 @@ Notes:
 - Results are kept for 1 hour (`RESULT_TTL_S`), then expire.
 - A failed job returns a generic `detail`; the real exception stays in the worker's log.
 - If Redis is down, the job endpoints return 503; the synchronous endpoints keep working without it.
+- If the resume was already analyzed (see [Result Cache](#-result-cache)), submitting returns `202` with `"status": "finished"` and a `cached-...` job ID immediately — nothing is queued, and polling that ID serves the result straight from the cache.
+
+---
+
+## ⚡ Result Cache
+
+The same resume produces the same analysis, so successful results are cached in Redis under a content hash — the same idea Git, Docker layers and CDNs are built on:
+
+```
+cache:{operation}:{model}:{prompt_version}:{sha256(extracted_text)}
+```
+
+- **What is hashed:** the *extracted text*, not the PDF bytes — a re-saved or re-exported PDF of the same resume still hits. The ATS endpoint hashes the resume text and the job description together, since both determine the output.
+- **Invalidation by key composition:** the operation, model and a prompt version string are part of the key, so switching models or editing a prompt (and bumping `PROMPT_VERSION` in `cache.py`) makes old entries unreachable — they expire via TTL (24h). No purge logic.
+- **Graceful degradation:** the cache is an optimization, never a dependency. Every Redis failure is treated as a miss, so with Redis down each request still succeeds by calling OpenAI as usual.
+- **Queue integration:** a cache hit on `POST /resume/jobs` skips the queue entirely and returns a finished pseudo-job; the worker writes its results into the same cache.
+- **Toggle:** set `CACHE_ENABLED=false` to turn it off (used for before/after load-test comparisons).
+- **Hit rate** (PromQL): `sum(rate(cache_operations_total{result="hit"}[5m])) / sum(rate(cache_operations_total[5m]))` — every hit is an OpenAI call (and its cost and seconds of latency) avoided.
+- **Known tradeoff:** the cache is shared across all users, so a cache hit reveals that the same resume was analyzed before. In a multi-user deployment the key should include a user or tenant ID.
 
 ---
 
@@ -329,6 +348,7 @@ Notes:
 | `jobs_enqueued_total` | Counter | `operation` | Background job submission rate |
 | `job_queue_depth` | Gauge | `queue` | Jobs waiting; rising depth means the workers can't keep up |
 | `job_queue_registry_jobs` | Gauge | `queue`, `state` | Jobs tracked as started / finished / failed (worker outcomes, read from Redis at scrape time) |
+| `cache_operations_total` | Counter | `operation`, `result` | Result cache hit rate (`result` is `hit` or `miss`) |
 
 - `route` is the route template (for example `/items/{id}`), not the raw URL, so the number of time series stays bounded. Paths that match no route are labeled `unmatched`.
 - Scrapes of `/metrics` itself are not counted.

@@ -21,7 +21,7 @@ from fastapi import HTTPException
 from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, ValidationError
 
-from resume_scanner import metrics
+from resume_scanner import cache, metrics
 
 load_dotenv()
 
@@ -66,12 +66,29 @@ def chat_completion(
     prompt: str,
     response_model: type[ResponseModelT],
     model: str = DEFAULT_MODEL,
+    cache_text: Optional[str] = None,
 ) -> ResponseModelT:
     """Run one JSON-mode chat completion and validate the reply into `response_model`.
+
+    When `cache_text` is given (the raw input the prompt was built from), the
+    result cache is checked first and a successful result is stored after: a
+    hit skips the OpenAI call entirely, including the API-key check.
 
     Raises HTTPException: 503 when no API key is configured, 502 when the
     upstream call fails or its reply doesn't parse into the model.
     """
+    digest = cache.text_digest(cache_text) if cache_text is not None else None
+    if digest is not None:
+        cached = cache.get(operation, model, digest)
+        if cached is not None:
+            try:
+                return response_model.model_validate(cached)
+            except ValidationError:
+                logger.warning(
+                    "cached result no longer fits the schema; ignoring",
+                    extra={"operation": operation},
+                )
+
     client = get_openai_client()
     started = time.perf_counter()
     try:
@@ -87,13 +104,18 @@ def chat_completion(
 
     raw = response.choices[0].message.content
     try:
-        return response_model.model_validate_json(raw)
+        result = response_model.model_validate_json(raw)
     except (ValidationError, TypeError) as e:
         logger.warning(
             "openai response failed validation",
             extra={"operation": operation, "error_type": type(e).__name__},
         )
         raise HTTPException(status_code=502, detail=UPSTREAM_INVALID_RESPONSE_DETAIL)
+
+    # Only validated successes are cached; 502s and garbage never are.
+    if digest is not None:
+        cache.put(operation, model, digest, result.model_dump())
+    return result
 
 
 def record_openai_call(

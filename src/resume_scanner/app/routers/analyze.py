@@ -27,7 +27,10 @@ Resume:
 
 def _analyze_with_openai(resume_text: str) -> AnalysisResult:
     return chat_completion(
-        "analyze", ANALYZE_PROMPT.format(resume_text=resume_text), AnalysisResult
+        "analyze",
+        ANALYZE_PROMPT.format(resume_text=resume_text),
+        AnalysisResult,
+        cache_text=resume_text,
     )
 
 
