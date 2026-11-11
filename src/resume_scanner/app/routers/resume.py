@@ -1,5 +1,6 @@
 import fitz
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 
 from resume_scanner.app.models.schemas import ResumeAnalysisResponse
 from resume_scanner.app.openai_client import chat_completion
@@ -61,4 +62,7 @@ async def analyze_resume(file: UploadFile = File(...)):
     if not text.strip():
         raise HTTPException(status_code=400, detail="Could not extract text from PDF.")
 
-    return _analyze_resume(text.strip())
+    # The OpenAI client is synchronous: called inline it would block the
+    # event loop for the whole upstream call and serialize every request
+    # behind it. The threadpool keeps the loop free.
+    return await run_in_threadpool(_analyze_resume, text.strip())
